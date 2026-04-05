@@ -1,60 +1,63 @@
 import os
 from flask import Flask, render_template, request, jsonify
 import google.generativeai as genai
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 
-# ==========================================
-# 1. CORE SYSTEM & API
-# ==========================================
-# Your API Key is integrated here. Keep this file safe!
-API_KEY = "AIzaSyBPRvocNCncKxv29m2RLxHsML1SDNxSH0c"
+# --- CONFIGURATION ---
+  OPENROUTER_API_KEY = "AIzaSyBRBe6S5NQ5LSDZ9rzIwNlCMK3GtgyG44Q"
 
-# This variable holds Villain's ongoing memory
-villain_chat = None
+# Model list — openrouter/free auto-picks any available free model.
+# Others are fallbacks in case of rate limits.
+MODELS = [
+    "openrouter/auto",                          # auto-picks best free model available
+    "meta-llama/llama-3.3-70b-instruct:free",  # llama fallback
+    "deepseek/deepseek-chat-v3-0324:free",      # deepseek fallback
+    "qwen/qwen3-235b-a22b:free",               # qwen fallback
+    "google/gemma-3-27b-it:free",               # gemma fallback
+]
 
-if API_KEY:
-    genai.configure(api_key=API_KEY)
-    
-    # We build the Mastermind: We give him his brain and his permanent personality
-    model = genai.GenerativeModel(
-        model_name='gemini-1.5-flash',
-        system_instruction="You are Villain, an advanced, dark AI mastermind. The user's name is Prabhat. Keep your answers brief, futuristic, and slightly villainous."
+      system_instruction="You are Villain, an advanced, dark AI mastermind. The user's name is Prabhat. You can see files and hear voice commands. Keep answers brief and villainous."
     )
-    
-    # We open a continuous communication channel so he remembers the whole conversation
-    villain_chat = model.start_chat(history=[])
+    chat_session = model.start_chat(history=[])
 else:
-    print("WARNING: API Key not found!")
+    print("API KEY MISSING")
 
-# ==========================================
-# 2. THE CLOUD ROUTES
-# ==========================================
 @app.route('/')
 def home():
-    # This loads your futuristic index.html page
     return render_template('index.html')
 
 @app.route('/chat', methods=['POST'])
 def chat():
-    user_msg = request.json.get("message", "")
+    user_msg = request.form.get("message", "")
+    file = request.files.get("file")
     
-    if not villain_chat:
-        return jsonify({"response": "SYSTEM ERROR: API Key missing or invalid."})
+    content_parts = [user_msg]
     
     try:
-        # We send your message into his memory stream
-        response = villain_chat.send_message(user_msg)
-        
-        # Clean up the text so it looks perfect on your hacking terminal
+        # If a document or image is uploaded
+        if file and file.filename != '':
+            filename = secure_filename(file.filename)
+            filepath = os.path.join(UPLOAD_FOLDER, filename)
+            file.save(filepath)
+            
+            # Upload to Google's temporary File API
+            uploaded_file = genai.upload_file(path=filepath)
+            content_parts.append(uploaded_file)
+            
+            # Clean up local file
+            os.remove(filepath)
+
+        # Send both text and file to Villain
+        response = chat_session.send_message(content_parts)
         clean_text = response.text.replace('*', '').replace('#', '')
         
         return jsonify({"response": clean_text})
     
     except Exception as e:
-        print(f"Error: {e}") # This helps track down bugs in the Render logs
-        return jsonify({"response": "SYSTEM ERROR: Communication with the Motherbrain failed."})
+        return jsonify({"response": f"SYSTEM ERROR: {str(e)}"})
 
-# Render uses Gunicorn to run this, but this allows you to test it on your PC too
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
+    
