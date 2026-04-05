@@ -1,0 +1,43 @@
+import os
+from flask import Flask, render_template, request, jsonify
+import google.generativeai as genai
+
+app = Flask(__name__)
+
+# --- SECURE THE KEY ---
+# It pulls the secret key from Render's Environment Variables
+API_KEY = os.environ.get("GEMINI_API_KEY") 
+
+if API_KEY:
+    genai.configure(api_key=API_KEY)
+    model = genai.GenerativeModel('gemini-1.5-flash')
+else:
+    model = None
+
+# --- WEB ROUTES ---
+@app.route('/')
+def home():
+    return render_template('index.html')
+
+@app.route('/chat', methods=['POST'])
+def chat():
+    user_msg = request.json.get("message", "")
+    
+    if not model:
+        return jsonify({"response": "SYSTEM ERROR: API Key missing in cloud environment."})
+    
+    try:
+        # Villain's core personality
+        system_prompt = f"You are Villain, an advanced, dark AI mastermind. The user's name is Prabhat. Keep your answers brief, futuristic, and slightly villainous. User says: {user_msg}"
+        
+        response = model.generate_content(system_prompt)
+        clean_text = response.text.replace('*', '').replace('#', '')
+        
+        return jsonify({"response": clean_text})
+    
+    except Exception as e:
+        return jsonify({"response": "SYSTEM ERROR: API connection failed."})
+
+# Render uses Gunicorn, but this allows for local testing if needed
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)
